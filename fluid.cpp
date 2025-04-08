@@ -9,10 +9,15 @@
 #include <omp.h>
 #endif
 
-#define PARALLEL_FOR(flag, directive) \
-  if (flag) { directive; } else {}
-#define PARALLEL_CRITICAL(flag) \
-  if (flag) { _Pragma("omp critical"); }
+#define PARALLEL_FOR(flag, directive)                                          \
+  if (flag) {                                                                  \
+    directive;                                                                 \
+  } else {                                                                     \
+  }
+#define PARALLEL_CRITICAL(flag)                                                \
+  if (flag) {                                                                  \
+    _Pragma("omp critical");                                                   \
+  }
 
 struct Particle {
   sf::Vector2f position;
@@ -60,98 +65,121 @@ public:
     tableNeighbour.resize(numParticles, std::vector<int>(maxNeighbour, -1));
   }
 
-void update(float dt, const sf::Vector2f& inputForce){
-      auto start = std::chrono::high_resolution_clock::now();
+  void update(float dt, const sf::Vector2f &inputForce) {
+    auto start = std::chrono::high_resolution_clock::now();
 
-  // Step 1: Apply forces
-  const sf::Vector2f gravity(0.0f, 150.0f);
+    // Step 1: Apply forces
+    const sf::Vector2f gravity(0.0f, 250.0f);
 
-  sf::Vector2f totalForce = gravity;
-totalForce += inputForce;
+    sf::Vector2f totalForce = gravity;
+    totalForce += inputForce;
 
-  PARALLEL_FOR(useParallel, _Pragma("omp parallel for"))
-  for (int i = 0; i < numParticles; ++i) {
-    particles[i].velocity += totalForce * dt;
-    particles[i].position += particles[i].velocity * dt;
-  }
-  auto tForces = std::chrono::high_resolution_clock::now();
-
-  // Step 2: Neighbor search
-  neighbourSearch();
-  auto tNeighbour = std::chrono::high_resolution_clock::now();
-
-  // Step 3: Solve constraints
-  for (int iter = 0; iter < solveIterations; ++iter) {
-    solveConstraints();
-  }
-  auto tConstraints = std::chrono::high_resolution_clock::now();
-
-  // Step 4: Collision detection
-  float minDist = std::numeric_limits<float>::max();
-  PARALLEL_FOR(useParallel, _Pragma("omp parallel for reduction(min : minDist)"))
-  for (int p = 0; p < numParticles; ++p) {
-    for (int i = 0; i < numNeighbour[p]; ++i) {
-      int nbIndex = tableNeighbour[p][i];
-      if (nbIndex <= p) continue;
-      float distSq =
-          (particles[p].position - particles[nbIndex].position).x *
-              (particles[p].position - particles[nbIndex].position).x +
-          (particles[p].position - particles[nbIndex].position).y *
-              (particles[p].position - particles[nbIndex].position).y;
-      float dist = std::sqrt(distSq);
-      minDist = std::min(minDist, dist);
+    PARALLEL_FOR(useParallel, _Pragma("omp parallel for"))
+    for (int i = 0; i < numParticles; ++i) {
+      particles[i].velocity += totalForce * dt;
+      particles[i].position += particles[i].velocity * dt;
     }
-  }
-  auto tCollisionDetect = std::chrono::high_resolution_clock::now();
+    auto tForces = std::chrono::high_resolution_clock::now();
 
-  // Step 5: Resolve collisions
-  if (minDist < 10.0f - minDistThreshold || minDist > 10.0f + minDistThreshold) {
-    for (int iter = 0; iter < collisionIterations; ++iter) {
-      resolveCollisions();
+    // Step 2: Neighbor search
+    neighbourSearch();
+    auto tNeighbour = std::chrono::high_resolution_clock::now();
+
+    // Step 3: Solve constraints
+    for (int iter = 0; iter < solveIterations; ++iter) {
+      solveConstraints();
     }
-  }
-  auto tCollisionResolve = std::chrono::high_resolution_clock::now();
+    auto tConstraints = std::chrono::high_resolution_clock::now();
 
-  // Step 6: Update velocities and apply boundary conditions
-  PARALLEL_FOR(useParallel, _Pragma("omp parallel for"))
-  for (int i = 0; i < numParticles; ++i) {
-    sf::Vector2f oldPos = particles[i].position - particles[i].velocity * dt;
-    particles[i].velocity = (particles[i].position - oldPos) / dt;
-    boundaryCondition(particles[i]);
-  }
-  auto tVelocityUpdate = std::chrono::high_resolution_clock::now();
+    // Step 4: Collision detection
+    float minDist = std::numeric_limits<float>::max();
+    PARALLEL_FOR(useParallel,
+                 _Pragma("omp parallel for reduction(min : minDist)"))
+    for (int p = 0; p < numParticles; ++p) {
+      for (int i = 0; i < numNeighbour[p]; ++i) {
+        int nbIndex = tableNeighbour[p][i];
+        if (nbIndex <= p)
+          continue;
+        float distSq =
+            (particles[p].position - particles[nbIndex].position).x *
+                (particles[p].position - particles[nbIndex].position).x +
+            (particles[p].position - particles[nbIndex].position).y *
+                (particles[p].position - particles[nbIndex].position).y;
+        float dist = std::sqrt(distSq);
+        minDist = std::min(minDist, dist);
+      }
+    }
+    auto tCollisionDetect = std::chrono::high_resolution_clock::now();
 
-  // Log timings every 60 frames
-  static int frame = 0;
-  if (frame % 60 == 0) {
-    auto forcesTime = std::chrono::duration_cast<std::chrono::microseconds>(tForces - start).count();
-    auto neighbourTime = std::chrono::duration_cast<std::chrono::microseconds>(tNeighbour - tForces).count();
-    auto constraintsTime = std::chrono::duration_cast<std::chrono::microseconds>(tConstraints - tNeighbour).count();
-    auto collisionDetectTime = std::chrono::duration_cast<std::chrono::microseconds>(tCollisionDetect - tConstraints).count();
-    auto collisionResolveTime = std::chrono::duration_cast<std::chrono::microseconds>(tCollisionResolve - tCollisionDetect).count();
-    auto velocityUpdateTime = std::chrono::duration_cast<std::chrono::microseconds>(tVelocityUpdate - tCollisionResolve).count();
-    auto totalTime = std::chrono::duration_cast<std::chrono::microseconds>(tVelocityUpdate - start).count();
+    // Step 5: Resolve collisions
+    if (minDist < 10.0f - minDistThreshold ||
+        minDist > 10.0f + minDistThreshold) {
+      for (int iter = 0; iter < collisionIterations; ++iter) {
+        resolveCollisions();
+      }
+    }
+    auto tCollisionResolve = std::chrono::high_resolution_clock::now();
 
-    std::cout << (useParallel ? "[Parallel] " : "[Single] ")
-              << "Frame " << frame << " timings (us):\n";
-    std::cout << "  Total=" << totalTime << "\n";
-    std::cout << "  ApplyForces=" << forcesTime << "\n";
-    std::cout << "  NeighbourSearch=" << neighbourTime << "\n";
-    std::cout << "  SolveConstraints=" << constraintsTime << "\n";
-    std::cout << "  CollisionDetect=" << collisionDetectTime << "\n";
-    std::cout << "  CollisionResolve=" << collisionResolveTime << "\n";
-    std::cout << "  VelocityUpdate=" << velocityUpdateTime << "\n";
-    std::cout << "  MinDist=" << minDist << " (should be >= " << 2.0f * radius << ")\n";
+    // Step 6: Update velocities and apply boundary conditions
+    PARALLEL_FOR(useParallel, _Pragma("omp parallel for"))
+    for (int i = 0; i < numParticles; ++i) {
+      sf::Vector2f oldPos = particles[i].position - particles[i].velocity * dt;
+      particles[i].velocity = (particles[i].position - oldPos) / dt;
+      boundaryCondition(particles[i]);
+    }
+    auto tVelocityUpdate = std::chrono::high_resolution_clock::now();
+
+    // Log timings every 60 frames
+    static int frame = 0;
+    if (frame % 60 == 0) {
+      auto forcesTime =
+          std::chrono::duration_cast<std::chrono::microseconds>(tForces - start)
+              .count();
+      auto neighbourTime =
+          std::chrono::duration_cast<std::chrono::microseconds>(tNeighbour -
+                                                                tForces)
+              .count();
+      auto constraintsTime =
+          std::chrono::duration_cast<std::chrono::microseconds>(tConstraints -
+                                                                tNeighbour)
+              .count();
+      auto collisionDetectTime =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              tCollisionDetect - tConstraints)
+              .count();
+      auto collisionResolveTime =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              tCollisionResolve - tCollisionDetect)
+              .count();
+      auto velocityUpdateTime =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              tVelocityUpdate - tCollisionResolve)
+              .count();
+      auto totalTime = std::chrono::duration_cast<std::chrono::microseconds>(
+                           tVelocityUpdate - start)
+                           .count();
+
+      std::cout << (useParallel ? "[Parallel] " : "[Single] ") << "Frame "
+                << frame << " timings (us):\n";
+      std::cout << "  Total=" << totalTime << "\n";
+      std::cout << "  ApplyForces=" << forcesTime << "\n";
+      std::cout << "  NeighbourSearch=" << neighbourTime << "\n";
+      std::cout << "  SolveConstraints=" << constraintsTime << "\n";
+      std::cout << "  CollisionDetect=" << collisionDetectTime << "\n";
+      std::cout << "  CollisionResolve=" << collisionResolveTime << "\n";
+      std::cout << "  VelocityUpdate=" << velocityUpdateTime << "\n";
+      std::cout << "  MinDist=" << minDist << " (should be >= " << 2.0f * radius
+                << ")\n";
+    }
+    frame++;
   }
-  frame++;
-}
 
   void render(sf::RenderWindow &window) {
     window.clear(sf::Color(233, 245, 243));
     sf::CircleShape particleShape(radius);
     particleShape.setOrigin(radius, radius);
     particleShape.setOutlineThickness(1.0f);
-    particleShape.setOutlineColor(sf::Color::Black);
+    // particleShape.setOutlineColor(sf::Color::Black);
     for (const auto &particle : particles) {
       particleShape.setPosition(particle.position);
       particleShape.setFillColor(particle.color);
@@ -186,14 +214,13 @@ private:
   std::vector<std::vector<std::vector<int>>> tableGrid;
   std::vector<int> numNeighbour;
   std::vector<std::vector<int>> tableNeighbour;
-    std::vector<float> poly6Table;
+  std::vector<float> poly6Table;
 
   void initializeParticles() {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> dis(-2.0f, 2.0f);
 
-    std::vector<float> poly6Table(1000);
     initKernels();
 
     for (int i = 0; i < numParticles; ++i) {
@@ -264,14 +291,15 @@ private:
       int gX = gridPos.x;
       int gY = gridPos.y;
       if (gX < 0 || gX >= gridCols || gY < 0 || gY >= gridRows) {
-        std::cout << "Grid out of bounds for particle " << p << ": (" << gX << ", " << gY << ")\n";
+        std::cout << "Grid out of bounds for particle " << p << ": (" << gX
+                  << ", " << gY << ")\n";
         continue;
       }
-      PARALLEL_CRITICAL(useParallel)
-      {
+      PARALLEL_CRITICAL(useParallel) {
         int &count = numParticleInGrid[gX][gY];
         if (count >= maxParticleInGrid) {
-          std::cout << "Grid cell (" << gX << ", " << gY << ") overflow at particle " << p << "\n";
+          std::cout << "Grid cell (" << gX << ", " << gY
+                    << ") overflow at particle " << p << "\n";
         } else {
           tableGrid[gX][gY][count] = p;
           count++;
@@ -284,15 +312,18 @@ private:
       sf::Vector2i gridPos = getGrid(particles[p].position);
       int gX = gridPos.x;
       int gY = gridPos.y;
-      if (gX < 0 || gX >= gridCols || gY < 0 || gY >= gridRows) continue;
+      if (gX < 0 || gX >= gridCols || gY < 0 || gY >= gridRows)
+        continue;
       for (int offX = -1; offX <= 1; ++offX) {
         for (int offY = -1; offY <= 1; ++offY) {
           int nbX = gX + offX;
           int nbY = gY + offY;
-          if (nbX < 0 || nbX >= gridCols || nbY < 0 || nbY >= gridRows) continue;
+          if (nbX < 0 || nbX >= gridCols || nbY < 0 || nbY >= gridRows)
+            continue;
           for (int i = 0; i < numParticleInGrid[nbX][nbY]; ++i) {
             int nbIndex = tableGrid[nbX][nbY][i];
-            if (nbIndex == p) continue;
+            if (nbIndex == p)
+              continue;
             float distSq =
                 (particles[p].position - particles[nbIndex].position).x *
                     (particles[p].position - particles[nbIndex].position).x +
@@ -322,21 +353,23 @@ private:
     return result;
   }
 
-
 void initKernels() {
+  poly6Table.resize(1000);
   for (int i = 0; i < 1000; ++i) {
     float d = i * h / 999.0f;
     float d2 = d * d;
     if (d < h) {
       float rhs = (h2 - d2);
       poly6Table[i] = poly6Coe * rhs * rhs * rhs / h9;
+    } else {
+      poly6Table[i] = 0.0f; // Explicitly set to 0 when d >= h
     }
   }
 }
-float poly6Fast(float dist) {
-  int idx = std::min(999, static_cast<int>(dist * 999.0f / h));
-  return poly6Table[idx];
-}
+  float poly6Fast(float dist) {
+    int idx = std::min(999, static_cast<int>(dist * 999.0f / h));
+    return poly6Table[idx];
+  }
 
   float poly6Scalar(float dist) {
     float result = 0.0f;
@@ -351,7 +384,8 @@ float poly6Fast(float dist) {
   sf::Vector2f spiky(sf::Vector2f dist, float distSq) {
     sf::Vector2f result(0.0f, 0.0f);
     float d = std::sqrt(distSq);
-    if (d < 0.001f) d = 0.001f;
+    if (d < 0.001f)
+      d = 0.001f;
     if (0.0f < d && d < h) {
       float m = (h - d) * (h - d);
       result = (spikyCoe * m / (h6 * d)) * dist;
@@ -377,7 +411,8 @@ float poly6Fast(float dist) {
       for (int i = 0; i < numNeighbour[p]; ++i) {
         int nbIndex = tableNeighbour[p][i];
         sf::Vector2f nbPos = particles[nbIndex].position;
-        float distSq = (pos - nbPos).x * (pos - nbPos).x + (pos - nbPos).y * (pos - nbPos).y;
+        float distSq = (pos - nbPos).x * (pos - nbPos).x +
+                       (pos - nbPos).y * (pos - nbPos).y;
         density += mass * poly6(pos - nbPos, distSq);
         sf::Vector2f s = spiky(pos - nbPos, distSq) / restDensity;
         spikySum += s;
@@ -396,7 +431,8 @@ float poly6Fast(float dist) {
       for (int i = 0; i < numNeighbour[p]; ++i) {
         int nbIndex = tableNeighbour[p][i];
         sf::Vector2f nbPos = particles[nbIndex].position;
-        float distSq = (pos - nbPos).x * (pos - nbPos).x + (pos - nbPos).y * (pos - nbPos).y;
+        float distSq = (pos - nbPos).x * (pos - nbPos).x +
+                       (pos - nbPos).y * (pos - nbPos).y;
         float scorr = sCorr(pos - nbPos, distSq);
         float left = particles[p].lambda + particles[nbIndex].lambda + scorr;
         sf::Vector2f right = spiky(pos - nbPos, distSq);
@@ -412,33 +448,37 @@ float poly6Fast(float dist) {
   }
 
   void resolveCollisions() {
-    const float energyPreservationOnCollision = 0.95f;  
-    const float artificialViscosity = 0.003f; 
-    
+    const float energyPreservationOnCollision = 0.95f;
+    const float artificialViscosity = 0.003f;
+
     PARALLEL_FOR(useParallel, _Pragma("omp parallel for"))
     for (int p = 0; p < numParticles; ++p) {
       sf::Vector2f pos = particles[p].position;
       for (int i = 0; i < numNeighbour[p]; ++i) {
         int nbIndex = tableNeighbour[p][i];
-        if (nbIndex <= p) continue;
+        if (nbIndex <= p)
+          continue;
         sf::Vector2f nbPos = particles[nbIndex].position;
-        float distSq = (pos - nbPos).x * (pos - nbPos).x + (pos - nbPos).y * (pos - nbPos).y;
+        float distSq = (pos - nbPos).x * (pos - nbPos).x +
+                       (pos - nbPos).y * (pos - nbPos).y;
         float minDistSq = (2.0f * radius) * (2.0f * radius);
         if (distSq < minDistSq && distSq > 0.001f) {
           float dist = std::sqrt(distSq);
           float minDist = 2.0f * radius;
           float overlap = minDist - dist;
           sf::Vector2f correction = (pos - nbPos) / dist * overlap * 0.5f;
-          PARALLEL_CRITICAL(useParallel)
-          {
+          PARALLEL_CRITICAL(useParallel) {
             particles[p].position += correction;
             particles[nbIndex].position -= correction;
 
-            sf::Vector2f relVel = particles[p].velocity - particles[nbIndex].velocity;
+            sf::Vector2f relVel =
+                particles[p].velocity - particles[nbIndex].velocity;
 
             particles[p].velocity *= (1 - artificialViscosity);
-            particles[p].velocity -= relVel * (1.0f - energyPreservationOnCollision) * 0.5f;
-            particles[nbIndex].velocity += relVel * (1.0f - energyPreservationOnCollision) * 0.5f;
+            particles[p].velocity -=
+                relVel * (1.0f - energyPreservationOnCollision) * 0.5f;
+            particles[nbIndex].velocity +=
+                relVel * (1.0f - energyPreservationOnCollision) * 0.5f;
           }
         }
       }
@@ -449,18 +489,18 @@ float poly6Fast(float dist) {
 int main() {
   const float windowWidth = 500.0f;
   const float windowHeight = 500.0f;
-  const int numParticles = 400;
+  const int numParticles = 500;
   const float radius = 5.0f;
 
   sf::Vector2f inputForce(0.0f, 0.0f);
   const float forceMagnitude = 450.0f;
 
-
   sf::Clock clock;
   const float dt = 1.0f / 60.0f;
 
   std::cout << "Running parallel version...\n";
-  FluidSimulation simParallel(numParticles, windowWidth, windowHeight, radius, true);
+  FluidSimulation simParallel(numParticles, windowWidth, windowHeight, radius,
+                              true);
   sf::RenderWindow windowParallel(sf::VideoMode(static_cast<int>(windowWidth),
                                                 static_cast<int>(windowHeight)),
                                   "Particle System - Parallel");
@@ -475,11 +515,15 @@ int main() {
       }
     }
 
-inputForce = sf::Vector2f(0.0f,0.0f);
-if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) inputForce = sf::Vector2f(- forceMagnitude,0.0f);
-if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) inputForce = sf::Vector2f(forceMagnitude,0.0f);
-if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) inputForce= sf::Vector2f(0.0f, -forceMagnitude);
-if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) inputForce = sf::Vector2f(0.0f, forceMagnitude);
+    inputForce = sf::Vector2f(0.0f, 0.0f);
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
+      inputForce = sf::Vector2f(-forceMagnitude, 0.0f);
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
+      inputForce = sf::Vector2f(forceMagnitude, 0.0f);
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
+      inputForce = sf::Vector2f(0.0f, -forceMagnitude);
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
+      inputForce = sf::Vector2f(0.0f, forceMagnitude);
 
     simParallel.update(dt, inputForce);
     simParallel.render(windowParallel);
