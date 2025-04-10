@@ -20,13 +20,17 @@ Basic Fluid Simulation(PBD) implementation using the SFML library in C++.
    ```
 Build and Run the simulation by:
    ```bash
-g++ -std=c++11 fluid.cpp -o fluid -lsfml-graphics -lsfml-window -lsfml-system
+mkdir build && cd build
 
-./fluid
+cmake ..
+cmake --build .
+
+./fluid_sim
+
    ```
 
 
-   W, S, A and D to apply force! 
+   W, S, A and D to apply force!
 
 Used methods in **Paper: Position Based Fluids
 By
