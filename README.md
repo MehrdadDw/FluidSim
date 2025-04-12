@@ -1,4 +1,4 @@
-# Position-Based Dynamics
+# Fluid Position-Based Dynamics
 Basic Fluid Simulation(PBD) implementation using the SFML library in C++.
 
 
@@ -32,7 +32,7 @@ cmake --build .
    ```
 
 
-   W, S, A and D to apply force!
+   Use Space bar to drop! W, S, A and D to apply force!
 
 Used methods in **Paper: Position Based Fluids
 By
