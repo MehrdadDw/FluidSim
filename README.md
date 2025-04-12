@@ -1,9 +1,11 @@
 # Position-Based Dynamics
 Basic Fluid Simulation(PBD) implementation using the SFML library in C++.
 
-<div align="center">
-  <img src="sim.gif" alt="Fluid Simulation" width="500">
-</div>
+
+<video width="690" height="263" controls>
+  <source src="output.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 ## Prerequisites
 - SFML library installed.
